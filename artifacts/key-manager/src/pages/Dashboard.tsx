@@ -4,7 +4,7 @@ import { KeysTable } from "@/components/KeysTable";
 import { AddKeyDialog } from "@/components/AddKeyDialog";
 import { ImportKeysDialog } from "@/components/ImportKeysDialog";
 import { Button } from "@/components/ui/button";
-import { Plus, Download, ShieldCheck, Loader2 } from "lucide-react";
+import { Plus, Download, ShieldCheck, Loader2, Trash2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getListKeysQueryKey, getGetKeyStatsQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
@@ -30,8 +30,30 @@ export function Dashboard() {
   const [autoBan, setAutoBan] = useState(true);
   const [onlyActive, setOnlyActive] = useState(true);
   const [isValidating, setIsValidating] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
+  const [isPurgeConfirmOpen, setIsPurgeConfirmOpen] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const handlePurgeInvalid = async () => {
+    setIsPurgeConfirmOpen(false);
+    setIsPurging(true);
+    try {
+      const resp = await fetch(`${BASE_URL}keys/purge-invalid`, { method: "DELETE" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const result = await resp.json();
+      queryClient.invalidateQueries({ queryKey: getListKeysQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetKeyStatsQueryKey() });
+      toast({
+        title: `已清除 ${result.deleted} 个无效 key`,
+        description: "所有检测状态为"无效"的 key 已从数据库中删除。",
+      });
+    } catch (e) {
+      toast({ title: "清除失败", description: String(e), variant: "destructive" });
+    } finally {
+      setIsPurging(false);
+    }
+  };
 
   const handleValidateAll = async () => {
     setIsValidateAllOpen(false);
@@ -73,6 +95,20 @@ export function Dashboard() {
           <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
             <Button
               variant="outline"
+              className="flex-1 sm:flex-none text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
+              onClick={() => setIsPurgeConfirmOpen(true)}
+              disabled={isPurging}
+              data-testid="button-purge-invalid"
+            >
+              {isPurging ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+              {isPurging ? "清除中..." : "清除无效"}
+            </Button>
+            <Button
+              variant="outline"
               className="flex-1 sm:flex-none"
               onClick={() => setIsValidateAllOpen(true)}
               disabled={isValidating}
@@ -104,6 +140,28 @@ export function Dashboard() {
 
         <AddKeyDialog open={isAddOpen} onOpenChange={setIsAddOpen} />
         <ImportKeysDialog open={isImportOpen} onOpenChange={setIsImportOpen} />
+
+        <AlertDialog open={isPurgeConfirmOpen} onOpenChange={setIsPurgeConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>清除所有无效 Key？</AlertDialogTitle>
+              <AlertDialogDescription>
+                这将永久删除所有已检测为<strong>无效</strong>的 key（检测状态 = invalid）。
+                <br />
+                此操作不可撤销，请确保已完成"全部检测"后再执行。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handlePurgeInvalid}
+                className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              >
+                确认清除
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <AlertDialog open={isValidateAllOpen} onOpenChange={setIsValidateAllOpen}>
           <AlertDialogContent>

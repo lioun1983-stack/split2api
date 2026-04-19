@@ -88,6 +88,19 @@ const importKeysSchema = z.object({
   ),
 });
 
+router.delete("/keys/purge-invalid", async (req, res) => {
+  try {
+    const deleted = await db
+      .delete(apiKeysTable)
+      .where(eq(apiKeysTable.validationStatus, "invalid"))
+      .returning({ id: apiKeysTable.id });
+    res.json({ deleted: deleted.length });
+  } catch (e) {
+    req.log.error(e);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.post("/keys/import", async (req, res) => {
   try {
     const parsed = importKeysSchema.safeParse(req.body);
