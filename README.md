@@ -12,97 +12,92 @@ An OpenAI-compatible reverse proxy for [Sapiom](https://sapiom.ai)'s OpenRouter 
 - **One-click purge** — delete all keys marked invalid from the database
 - **Web UI** — password-protected key manager with import, search, and status display
 
+---
+
+## 🚀 Deploy on Deno Deploy (~5 min setup)
+
+[![Deploy on Deno](https://deno.com/button)](https://console.deno.com/new?clone=https://github.com/sayrui/split2api)
+
+> Clicking the button above will **fork this repo to your GitHub account** and create a linked Deno Deploy project. Then follow the 3 steps below.
+
+### Step 1 — Create your database
+
+Get a free PostgreSQL URL from [Neon](https://neon.tech) (free tier, no credit card). Then run the following SQL in the **Neon SQL Editor** to create the table:
+
+```sql
+CREATE TABLE IF NOT EXISTS api_keys (
+  id          SERIAL PRIMARY KEY,
+  name        TEXT NOT NULL,
+  key         TEXT NOT NULL,
+  provider    TEXT,
+  note        TEXT,
+  is_active   BOOLEAN NOT NULL DEFAULT true,
+  validation_status   TEXT,
+  validation_message  TEXT,
+  validated_at        TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+### Step 2 — Set GitHub repository secrets
+
+In your forked repo → **Settings → Secrets and variables → Actions → New repository secret**:
+
+| Secret | Value |
+|--------|-------|
+| `DATABASE_URL` | Your Neon connection string, e.g. `postgres://user:pass@host/db?sslmode=require` |
+| `VITE_APP_PASSWORD` | Any password you want for the Key Manager UI |
+
+> **No `DENO_DEPLOY_TOKEN` needed** — the workflow uses GitHub's built-in OIDC authentication.
+
+### Step 3 — Switch to GitHub Actions mode & set the project name
+
+In the Deno Deploy dashboard for your new project:
+
+1. Go to **Settings → Git** → change deployment mode to **"GitHub Actions"**
+2. Note the project name (default is your repo name). If it differs from `sapiom2api`, update the `project:` field in `.github/workflows/deno-deploy.yml`
+
+### Trigger your first deploy
+
+Push any commit to `main` (or click **"Re-run"** in GitHub Actions). The workflow will:
+
+1. Build the React frontend with `vite build`
+2. Upload `main.ts` + built assets to Deno Deploy
+
+Your app will be live at `https://<project-name>.deno.dev`
+
+---
+
 ## Architecture
 
 ```
 Client (OpenAI SDK / newapi / etc.)
         │  POST /v1/chat/completions
         ▼
-  main.ts  (Hono, Deno Deploy / Replit)
+  main.ts  (Hono server — runs on Deno Deploy)
   ├── /v1/*  →  proxy to openrouter.services.sapiom.ai
   │             (key rotation + x402 payment handling)
   ├── /api/* →  key management REST API
   └── /*    →  pre-built React key manager UI (SPA)
 ```
 
-## Deploy on Deno Deploy
+### Tech stack (Deno Deploy)
 
-[![Deploy on Deno](https://deno.com/button)](https://dash.deno.com/new?url=https://github.com/sayrui/split2api&entrypoint=main.ts)
-
-The project uses **GitHub Actions mode** — a build step is required to compile the React frontend before deployment.
-
-### Prerequisites
-
-- A free account at [dash.deno.com](https://dash.deno.com)
-- A PostgreSQL database (e.g. [Neon](https://neon.tech) free tier)
-
-### Step 1 — Create a Deno Deploy project
-
-1. Go to [dash.deno.com](https://dash.deno.com) → **New Project**
-2. Link your fork/clone of this GitHub repository
-3. Set the deployment mode to **"GitHub Actions"**
-4. Name the project **`sapiom2api`** (must match the `project:` field in `.github/workflows/deno-deploy.yml`)
-
-> If you choose a different project name, update the `project:` field in `.github/workflows/deno-deploy.yml` to match.
-
-### Step 2 — Set GitHub repository secrets
-
-Go to your GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**:
-
-| Secret | Required | Description |
-|--------|----------|-------------|
-| `DATABASE_URL` | ✅ | PostgreSQL connection string, e.g. `postgres://user:pass@host/db?sslmode=require` |
-| `VITE_APP_PASSWORD` | ✅ | Password to access the Key Manager UI |
-
-> **No `DENO_DEPLOY_TOKEN` needed.** The workflow uses GitHub's OIDC token for authentication — `permissions: id-token: write` is already configured in `.github/workflows/deno-deploy.yml`.
-
-### Step 3 — Apply the database schema
-
-Run this once to create the `api_keys` table in your PostgreSQL database:
-
-```bash
-DATABASE_URL=postgres://user:pass@host/db pnpm --filter @workspace/db exec drizzle-kit push
-```
-
-### Step 4 — Trigger a deploy
-
-Push any commit to `main` — GitHub Actions will automatically:
-
-1. Install pnpm dependencies
-2. Build the React key manager frontend (`vite build`)
-3. Copy the build output to `./dist/`
-4. Deploy `main.ts` + `dist/` to Deno Deploy via `denoland/deployctl`
-
-```
-git push origin main
-```
-
-The deployment URL will be `https://sapiom2api.deno.dev` (or your custom domain).
-
-### How the GitHub Actions workflow works
-
-```yaml
-# .github/workflows/deno-deploy.yml (summary)
-permissions:
-  id-token: write   # enables OIDC auth — no token secret needed
-  contents: read
-
-steps:
-  - pnpm install
-  - vite build  →  artifacts/key-manager/dist/public/
-  - cp dist/public → ./dist/
-  - denoland/deployctl  (project: sapiom2api, entrypoint: main.ts)
-```
+| Layer | Library |
+|-------|---------|
+| HTTP framework | [Hono](https://hono.dev) |
+| Database ORM | [drizzle-orm](https://orm.drizzle.team) + postgres.js |
+| Frontend | React + Vite (pre-built by GitHub Actions) |
+| Auth | GitHub OIDC (no token secret needed) |
 
 ---
 
-## Local Development (Node.js / Replit)
+## Local Development
 
 ### Requirements
 
-- Node.js 20+
-- pnpm
-- PostgreSQL (or Replit's built-in DB)
+- Node.js 20+, pnpm, PostgreSQL
 
 ### Environment Variables
 
@@ -116,9 +111,9 @@ steps:
 
 ```bash
 pnpm install
-pnpm --filter @workspace/db exec drizzle-kit push   # apply DB schema
-pnpm --filter @workspace/api-server run dev
-pnpm --filter @workspace/key-manager run dev
+pnpm --filter @workspace/db exec drizzle-kit push   # create DB schema
+pnpm --filter @workspace/api-server run dev          # API server
+pnpm --filter @workspace/key-manager run dev         # frontend UI
 ```
 
 ---
@@ -131,8 +126,8 @@ Point any OpenAI-compatible client at your deployment URL:
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://sapiom2api.deno.dev/v1",
-    api_key="any-value",   # not validated by the proxy
+    base_url="https://<your-project>.deno.dev/v1",
+    api_key="any-value",   # not checked by the proxy
 )
 
 response = client.chat.completions.create(
@@ -159,7 +154,7 @@ Access the dashboard at `/` and enter the password (`VITE_APP_PASSWORD`).
 
 ### Importing Keys
 
-Click **Import** and paste keys one per line (plain text) or as JSON:
+Click **Import** and paste keys one per line:
 
 ```
 <your-sapiom-api-key-1>
@@ -168,42 +163,37 @@ Click **Import** and paste keys one per line (plain text) or as JSON:
 
 ### Key Validation
 
-Each key can be tested against `api.sapiom.ai`:
-
 | Status | Meaning |
 |--------|---------|
 | ✅ Valid | Key authenticated and has balance |
 | ⚠️ No Balance | Key authenticated but insufficient balance |
-| ❌ Invalid | Key rejected (403) — likely expired or wrong key |
+| ❌ Invalid | Key rejected (403) — likely expired |
 | 🔘 Unreachable | Could not reach Sapiom API |
 
-**Validate All** — checks every active key in batches of 5, persists results to DB.  
-**Auto-ban** — invalid keys are automatically set to inactive during batch validation.  
+**Validate All** — checks every active key in batches of 5, saves results to DB.  
+**Auto-ban** — invalid keys are automatically disabled during batch validation.  
 **Clear Invalid** — permanently deletes all keys with `invalid` status.
 
 ---
 
 ## Key Management API
 
-All endpoints are under `/api/keys`.
-
 ```
-GET    /api/keys                    List all keys
-POST   /api/keys                    Create a key
-POST   /api/keys/import             Bulk import keys
-POST   /api/keys/validate-all       Batch validate (auto-ban optional)
-DELETE /api/keys/purge-invalid      Delete all invalid keys
-GET    /api/keys/:id                Get a key
-PATCH  /api/keys/:id                Update a key
-DELETE /api/keys/:id                Delete a key
-POST   /api/keys/:id/validate       Validate a single key
-GET    /api/keys/stats              Get stats (total, active, valid, invalid)
+GET    /api/keys                  List all keys
+POST   /api/keys                  Create a key
+POST   /api/keys/import           Bulk import keys
+POST   /api/keys/validate-all     Batch validate (auto-ban optional)
+DELETE /api/keys/purge-invalid    Delete all invalid keys
+GET    /api/keys/:id              Get a key
+PATCH  /api/keys/:id              Update a key
+DELETE /api/keys/:id              Delete a key
+POST   /api/keys/:id/validate     Validate a single key
+GET    /api/keys/stats            Stats (total / active / valid / invalid)
 ```
 
-### Validate All — Request Body
+#### `POST /api/keys/validate-all` options
 
 ```json
-POST /api/keys/validate-all
 {
   "autoBan": true,       // disable invalid keys automatically
   "onlyActive": true,    // skip already-disabled keys
@@ -218,23 +208,14 @@ POST /api/keys/validate-all
 ```
 .
 ├── main.ts                          # Deno entry point (Hono server)
-├── deno.json                        # Deno config (tasks, npm import map)
+├── deno.json                        # Deno tasks + npm import map
 ├── .github/workflows/
-│   └── deno-deploy.yml              # GitHub Actions: build + deploy to Deno
+│   └── deno-deploy.yml              # GitHub Actions: build → deploy
 ├── artifacts/
-│   ├── api-server/                  # Node.js/Express server (Replit dev)
-│   │   └── src/routes/
-│   │       ├── proxy.ts             # OpenAI-compatible proxy
-│   │       └── keys.ts              # Key CRUD + validation
-│   └── key-manager/                 # React + Vite web UI
-│       └── src/
-│           ├── pages/Dashboard.tsx
-│           └── components/
-│               ├── KeysTable.tsx
-│               └── StatsCards.tsx
+│   ├── api-server/                  # Express server (Replit dev only)
+│   └── key-manager/                 # React + Vite frontend
 └── lib/
-    └── db/                          # Drizzle ORM + PostgreSQL schema
-        └── src/schema/api-keys.ts
+    └── db/                          # Drizzle ORM schema
 ```
 
 ## License
