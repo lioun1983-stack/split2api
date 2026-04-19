@@ -5,10 +5,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Copy, Trash2, Edit2, Eye, EyeOff, KeyRound, Zap, CheckCircle2, XCircle, AlertCircle, Loader2 } from "lucide-react";
+import { Copy, Trash2, Edit2, Eye, EyeOff, KeyRound, Zap, CheckCircle2, XCircle, AlertCircle, Loader2, Clock } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,71 +24,51 @@ import { EditKeyDialog } from "./EditKeyDialog";
 import { Empty } from "@/components/ui/empty";
 
 type ValidateStatus = "valid" | "no_balance" | "invalid" | "unreachable";
-type ValidateResult = { status: ValidateStatus; message: string; httpStatus: number };
 
-async function validateKey(id: number, baseUrl: string): Promise<ValidateResult> {
-  const resp = await fetch(`${baseUrl}keys/${id}/validate`, { method: "POST" });
+type ApiKeyExtended = ApiKey & {
+  validationStatus?: string | null;
+  validationMessage?: string | null;
+  validatedAt?: string | null;
+};
+
+const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") + "/api/";
+
+async function validateSingleKey(id: number) {
+  const resp = await fetch(`${BASE_URL}keys/${id}/validate`, { method: "POST" });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
 }
 
-const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") + "/api/";
+function StatusBadge({ status, message, validatedAt }: { status: string; message?: string | null; validatedAt?: string | null }) {
+  const timeAgo = validatedAt
+    ? formatDistanceToNow(new Date(validatedAt), { addSuffix: true })
+    : null;
 
-function ValidateBadge({ result }: { result: ValidateResult }) {
-  if (result.status === "valid") {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            Valid
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>{result.message}</TooltipContent>
-      </Tooltip>
-    );
-  }
-  if (result.status === "no_balance") {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex items-center gap-1 text-xs font-medium text-yellow-600">
-            <AlertCircle className="h-3.5 w-3.5" />
-            No Balance
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>{result.message}</TooltipContent>
-      </Tooltip>
-    );
-  }
-  if (result.status === "unreachable") {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
-            <AlertCircle className="h-3.5 w-3.5" />
-            Offline
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>{result.message}</TooltipContent>
-      </Tooltip>
-    );
-  }
+  const inner = (() => {
+    if (status === "valid") return <span className="inline-flex items-center gap-1 text-xs text-green-600 font-medium"><CheckCircle2 className="h-3 w-3" />有效</span>;
+    if (status === "no_balance") return <span className="inline-flex items-center gap-1 text-xs text-yellow-600 font-medium"><AlertCircle className="h-3 w-3" />余额不足</span>;
+    if (status === "invalid") return <span className="inline-flex items-center gap-1 text-xs text-destructive font-medium"><XCircle className="h-3 w-3" />无效</span>;
+    if (status === "unreachable") return <span className="inline-flex items-center gap-1 text-xs text-muted-foreground font-medium"><AlertCircle className="h-3 w-3" />不可达</span>;
+    return null;
+  })();
+
+  if (!inner) return null;
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="inline-flex items-center gap-1 text-xs font-medium text-destructive">
-          <XCircle className="h-3.5 w-3.5" />
-          Invalid
-        </span>
+        <span className="cursor-default">{inner}</span>
       </TooltipTrigger>
-      <TooltipContent>{result.message}</TooltipContent>
+      <TooltipContent className="max-w-[260px] text-xs space-y-1">
+        {message && <p>{message}</p>}
+        {timeAgo && <p className="text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" />检测于 {timeAgo}</p>}
+      </TooltipContent>
     </Tooltip>
   );
 }
 
 export function KeysTable() {
-  const { data: keys, isLoading } = useListKeys();
+  const { data: keys, isLoading, refetch } = useListKeys();
   const updateKey = useUpdateKey();
   const deleteKey = useDeleteKey();
   const queryClient = useQueryClient();
@@ -98,56 +78,36 @@ export function KeysTable() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [editingKey, setEditingKey] = useState<ApiKey | null>(null);
   const [validating, setValidating] = useState<Set<number>>(new Set());
-  const [validateResults, setValidateResults] = useState<Map<number, ValidateResult>>(new Map());
 
   const toggleVisibility = (id: number) => {
     setVisibleKeys((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
 
   const handleCopy = async (keyText: string) => {
     await navigator.clipboard.writeText(keyText);
-    toast({
-      title: "Copied to clipboard",
-      description: "The API key has been copied.",
-    });
+    toast({ title: "已复制", description: "API key 已复制到剪贴板。" });
   };
 
-  const handleValidate = async (key: ApiKey) => {
+  const handleValidate = async (key: ApiKeyExtended) => {
     setValidating((prev) => new Set(prev).add(key.id));
     try {
-      const result = await validateKey(key.id, BASE_URL);
-      setValidateResults((prev) => new Map(prev).set(key.id, result));
-      const statusLabel: Record<ValidateStatus, string> = {
-        valid: "Key is valid",
-        no_balance: "Key valid but no balance",
-        invalid: "Key is invalid",
-        unreachable: "API unreachable",
-      };
+      const result = await validateSingleKey(key.id);
+      await refetch();
+      queryClient.invalidateQueries({ queryKey: getGetKeyStatsQueryKey() });
+      const labels: Record<string, string> = { valid: "Key 有效", no_balance: "Key 有效但余额不足", invalid: "Key 无效", unreachable: "Sapiom API 不可达" };
       toast({
-        title: statusLabel[result.status],
+        title: labels[result.status] ?? result.status,
         description: result.message,
         variant: result.status === "valid" || result.status === "no_balance" ? "default" : "destructive",
       });
     } catch (e) {
-      toast({
-        title: "Validation failed",
-        description: String(e),
-        variant: "destructive",
-      });
+      toast({ title: "检测失败", description: String(e), variant: "destructive" });
     } finally {
-      setValidating((prev) => {
-        const next = new Set(prev);
-        next.delete(key.id);
-        return next;
-      });
+      setValidating((prev) => { const n = new Set(prev); n.delete(key.id); return n; });
     }
   };
 
@@ -158,18 +118,9 @@ export function KeysTable() {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListKeysQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetKeyStatsQueryKey() });
-          toast({
-            title: `Key ${isActive ? 'enabled' : 'disabled'}`,
-            description: `The key ${key.name} is now ${isActive ? 'active' : 'inactive'}.`,
-          });
+          toast({ title: `Key 已${isActive ? "启用" : "禁用"}`, description: `${key.name} 现在${isActive ? "启用" : "禁用"}中。` });
         },
-        onError: () => {
-          toast({
-            title: "Error",
-            description: "Failed to update key status.",
-            variant: "destructive",
-          });
-        },
+        onError: () => toast({ title: "错误", description: "更新状态失败。", variant: "destructive" }),
       }
     );
   };
@@ -183,18 +134,9 @@ export function KeysTable() {
           queryClient.invalidateQueries({ queryKey: getListKeysQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetKeyStatsQueryKey() });
           setDeleteConfirmId(null);
-          toast({
-            title: "Key deleted",
-            description: "The API key has been removed.",
-          });
+          toast({ title: "Key 已删除", description: "API key 已移除。" });
         },
-        onError: () => {
-          toast({
-            title: "Error",
-            description: "Failed to delete key.",
-            variant: "destructive",
-          });
-        },
+        onError: () => toast({ title: "错误", description: "删除失败。", variant: "destructive" }),
       }
     );
   };
@@ -215,8 +157,8 @@ export function KeysTable() {
     return (
       <Empty
         icon={KeyRound}
-        title="No keys found"
-        description="Add a new API key or import existing ones to get started."
+        title="暂无 API Key"
+        description="点击右上角添加或导入 API key。"
         className="py-12"
       />
     );
@@ -227,35 +169,36 @@ export function KeysTable() {
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="w-[200px]">Name</TableHead>
+            <TableHead className="w-[200px]">名称</TableHead>
             <TableHead>Key</TableHead>
             <TableHead>Provider</TableHead>
-            <TableHead>Created</TableHead>
-            <TableHead className="w-[110px]">Status</TableHead>
-            <TableHead className="text-right w-[160px]">Actions</TableHead>
+            <TableHead>创建时间</TableHead>
+            <TableHead className="w-[130px]">状态</TableHead>
+            <TableHead className="text-right w-[160px]">操作</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {keys.map((key) => {
+          {(keys as ApiKeyExtended[]).map((key) => {
             const isVisible = visibleKeys.has(key.id);
             const maskedKey = key.key.substring(0, 6) + "****************";
-            const validateResult = validateResults.get(key.id);
             const isValidating = validating.has(key.id);
-            
+
             return (
               <TableRow key={key.id} className="group">
                 <TableCell className="font-medium">
-                  <div className="flex flex-col">
+                  <div className="flex flex-col gap-0.5">
                     <span data-testid={`text-key-name-${key.id}`}>{key.name}</span>
                     {key.note && (
                       <span className="text-xs text-muted-foreground truncate max-w-[180px]" title={key.note}>
                         {key.note}
                       </span>
                     )}
-                    {validateResult && (
-                      <div className="mt-0.5">
-                        <ValidateBadge result={validateResult} />
-                      </div>
+                    {key.validationStatus && (
+                      <StatusBadge
+                        status={key.validationStatus}
+                        message={key.validationMessage}
+                        validatedAt={key.validatedAt}
+                      />
                     )}
                   </div>
                 </TableCell>
@@ -264,31 +207,17 @@ export function KeysTable() {
                     <span data-testid={`text-key-value-${key.id}`}>
                       {isVisible ? key.key : maskedKey}
                     </span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() => toggleVisibility(key.id)}
-                      data-testid={`button-toggle-visibility-${key.id}`}
-                    >
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => toggleVisibility(key.id)} data-testid={`button-toggle-visibility-${key.id}`}>
                       {isVisible ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() => handleCopy(key.key)}
-                      data-testid={`button-copy-key-${key.id}`}
-                    >
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleCopy(key.key)} data-testid={`button-copy-key-${key.id}`}>
                       <Copy className="h-3 w-3" />
                     </Button>
                   </div>
                 </TableCell>
                 <TableCell>
                   {key.provider ? (
-                    <Badge variant="secondary" className="font-normal" data-testid={`badge-provider-${key.id}`}>
-                      {key.provider}
-                    </Badge>
+                    <Badge variant="secondary" className="font-normal" data-testid={`badge-provider-${key.id}`}>{key.provider}</Badge>
                   ) : (
                     <span className="text-muted-foreground text-sm">—</span>
                   )}
@@ -307,37 +236,16 @@ export function KeysTable() {
                   <div className="flex items-center justify-end gap-1">
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-yellow-500"
-                          onClick={() => handleValidate(key)}
-                          disabled={isValidating}
-                          data-testid={`button-validate-${key.id}`}
-                        >
-                          {isValidating
-                            ? <Loader2 className="h-4 w-4 animate-spin" />
-                            : <Zap className="h-4 w-4" />}
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-yellow-500" onClick={() => handleValidate(key)} disabled={isValidating} data-testid={`button-validate-${key.id}`}>
+                          {isValidating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>Test key against Sapiom API</TooltipContent>
+                      <TooltipContent>检测 key 有效性</TooltipContent>
                     </Tooltip>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                      onClick={() => setEditingKey(key)}
-                      data-testid={`button-edit-${key.id}`}
-                    >
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => setEditingKey(key)} data-testid={`button-edit-${key.id}`}>
                       <Edit2 className="h-4 w-4" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                      onClick={() => setDeleteConfirmId(key.id)}
-                      data-testid={`button-delete-${key.id}`}
-                    >
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => setDeleteConfirmId(key.id)} data-testid={`button-delete-${key.id}`}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
@@ -351,19 +259,13 @@ export function KeysTable() {
       <AlertDialog open={!!deleteConfirmId} onOpenChange={(open) => !open && setDeleteConfirmId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the API key from your manager.
-            </AlertDialogDescription>
+            <AlertDialogTitle>确认删除？</AlertDialogTitle>
+            <AlertDialogDescription>此操作不可撤销，API key 将被永久删除。</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-              data-testid="button-confirm-delete"
-            >
-              Delete Key
+            <AlertDialogCancel data-testid="button-cancel-delete">取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" data-testid="button-confirm-delete">
+              删除
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
