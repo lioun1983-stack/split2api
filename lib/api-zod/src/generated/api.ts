@@ -14,3 +14,108 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * @summary List all API keys
+ */
+export const ListKeysResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  key: zod.string(),
+  provider: zod.string().nullable(),
+  note: zod.string().nullable(),
+  isActive: zod.boolean(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+export const ListKeysResponse = zod.array(ListKeysResponseItem);
+
+/**
+ * @summary Create a new API key
+ */
+export const CreateKeyBody = zod.object({
+  name: zod.string(),
+  key: zod.string(),
+  provider: zod.string().optional(),
+  note: zod.string().optional(),
+});
+
+/**
+ * @summary Import multiple API keys
+ */
+export const ImportKeysBody = zod.object({
+  keys: zod.array(
+    zod.object({
+      name: zod.string().optional(),
+      key: zod.string(),
+      provider: zod.string().optional(),
+      note: zod.string().optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Get a specific API key
+ */
+export const GetKeyParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetKeyResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  key: zod.string(),
+  provider: zod.string().nullable(),
+  note: zod.string().nullable(),
+  isActive: zod.boolean(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary Update an API key
+ */
+export const UpdateKeyParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateKeyBody = zod.object({
+  name: zod.string().optional(),
+  key: zod.string().optional(),
+  provider: zod.string().optional(),
+  note: zod.string().optional(),
+  isActive: zod.boolean().optional(),
+});
+
+export const UpdateKeyResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  key: zod.string(),
+  provider: zod.string().nullable(),
+  note: zod.string().nullable(),
+  isActive: zod.boolean(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary Delete an API key
+ */
+export const DeleteKeyParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Get key statistics
+ */
+export const GetKeyStatsResponse = zod.object({
+  total: zod.number(),
+  active: zod.number(),
+  inactive: zod.number(),
+  providers: zod.array(
+    zod.object({
+      provider: zod.string().nullable(),
+      count: zod.number(),
+    }),
+  ),
+});

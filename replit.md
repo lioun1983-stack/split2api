@@ -25,3 +25,12 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - `pnpm --filter @workspace/api-server run dev` — run API server locally
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+
+## Artifacts
+
+- **API Key Manager** (`artifacts/key-manager/`) — React + Vite frontend at `/`. Dashboard for managing API keys: add, import, delete, toggle active, copy keys. Dark navy/teal theme.
+- **API Server** (`artifacts/api-server/`) — Express 5 backend at `/api`. Routes: `/api/keys` (CRUD), `/api/keys/import` (bulk import), `/api/keys/stats`.
+
+## Database Schema
+
+- `api_keys` table: id, name, key, provider (nullable), note (nullable), is_active (boolean), created_at, updated_at

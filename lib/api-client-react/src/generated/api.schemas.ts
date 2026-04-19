@@ -8,3 +8,65 @@
 export interface HealthStatus {
   status: string;
 }
+
+export interface ApiKey {
+  id: number;
+  name: string;
+  key: string;
+  /** @nullable */
+  provider: string | null;
+  /** @nullable */
+  note: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateKeyRequest {
+  name: string;
+  key: string;
+  provider?: string;
+  note?: string;
+}
+
+export interface UpdateKeyRequest {
+  name?: string;
+  key?: string;
+  provider?: string;
+  note?: string;
+  isActive?: boolean;
+}
+
+export type ImportKeysRequestKeysItem = {
+  name?: string;
+  key: string;
+  provider?: string;
+  note?: string;
+};
+
+export interface ImportKeysRequest {
+  keys: ImportKeysRequestKeysItem[];
+}
+
+export interface ImportKeysResponse {
+  imported: number;
+  skipped: number;
+  keys: ApiKey[];
+}
+
+export type KeyStatsProvidersItem = {
+  /** @nullable */
+  provider: string | null;
+  count: number;
+};
+
+export interface KeyStats {
+  total: number;
+  active: number;
+  inactive: number;
+  providers: KeyStatsProvidersItem[];
+}
+
+export interface ErrorResponse {
+  error: string;
+}

@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: keys
+    description: API Key management
 paths:
   /healthz:
     get:
@@ -24,6 +26,151 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /keys:
+    get:
+      operationId: listKeys
+      tags: [keys]
+      summary: List all API keys
+      responses:
+        "200":
+          description: List of API keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiKey"
+    post:
+      operationId: createKey
+      tags: [keys]
+      summary: Create a new API key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateKeyRequest"
+      responses:
+        "201":
+          description: Created API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKey"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /keys/import:
+    post:
+      operationId: importKeys
+      tags: [keys]
+      summary: Import multiple API keys
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportKeysRequest"
+      responses:
+        "201":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportKeysResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /keys/{id}:
+    get:
+      operationId: getKey
+      tags: [keys]
+      summary: Get a specific API key
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKey"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateKey
+      tags: [keys]
+      summary: Update an API key
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateKeyRequest"
+      responses:
+        "200":
+          description: Updated API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKey"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteKey
+      tags: [keys]
+      summary: Delete an API key
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /keys/stats:
+    get:
+      operationId: getKeyStats
+      tags: [keys]
+      summary: Get key statistics
+      responses:
+        "200":
+          description: Key statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyStats"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +180,126 @@ components:
           type: string
       required:
         - status
-
+    ApiKey:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        key:
+          type: string
+        provider:
+          type: ["string", "null"]
+        note:
+          type: ["string", "null"]
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - name
+        - key
+        - provider
+        - note
+        - isActive
+        - createdAt
+        - updatedAt
+    CreateKeyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        key:
+          type: string
+        provider:
+          type: string
+        note:
+          type: string
+      required:
+        - name
+        - key
+    UpdateKeyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        key:
+          type: string
+        provider:
+          type: string
+        note:
+          type: string
+        isActive:
+          type: boolean
+    ImportKeysRequest:
+      type: object
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              key:
+                type: string
+              provider:
+                type: string
+              note:
+                type: string
+            required:
+              - key
+      required:
+        - keys
+    ImportKeysResponse:
+      type: object
+      properties:
+        imported:
+          type: integer
+        skipped:
+          type: integer
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApiKey"
+      required:
+        - imported
+        - skipped
+        - keys
+    KeyStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        active:
+          type: integer
+        inactive:
+          type: integer
+        providers:
+          type: array
+          items:
+            type: object
+            properties:
+              provider:
+                type: ["string", "null"]
+              count:
+                type: integer
+            required:
+              - provider
+              - count
+      required:
+        - total
+        - active
+        - inactive
+        - providers
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
