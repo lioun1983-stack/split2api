@@ -9,7 +9,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
+      id-token: write   # Required for OIDC auth with Deno Deploy (no token secret needed)
       contents: read
 
     steps:
@@ -41,14 +41,10 @@ jobs:
       - name: Copy frontend build to dist/
         run: cp -r artifacts/key-manager/dist/public ./dist
 
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
       - name: Deploy to Deno Deploy
         uses: denoland/deployctl@v1
         with:
+          # Must match the project name created on dash.deno.com
           project: sapiom2api
           entrypoint: main.ts
           include: |
